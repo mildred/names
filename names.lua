@@ -121,12 +121,17 @@ end
 
 
 local function mark_word(cfg, mark, word, verbose, length)
+  if type(mark) == "number" then
+    mark = function(n)
+      return n * mark
+    end
+  end
   local transitions = cfg.transitions
   length = length or #word
   if type(word) == 'string' then
     local w = word
     word = {}
-    for i in 1, length do
+    for i = 1, length do
       word[i] = w:sub(i, i)
     end
   end
@@ -139,28 +144,26 @@ local function mark_word(cfg, mark, word, verbose, length)
     if not transitions[oldl2] then
       transitions[oldl2] = {}
     end
-    local oldmark1 = transitions[oldl2][newl] or 1
-    local newmark1 = oldmark1 * mark
+    local oldmark1 = transitions[oldl2][newl] or 0
+    local newmark1 = mark(oldmark1) or oldmark1
+    if verbose >= 1 then
+      print(("Transition  '%s'->'%s' was %g and is now %g")
+        :format(oldl2, newl, oldmark1, newmark1))
+    end
     if oldl1 ~= '' then
       l2 = oldl1 .. oldl2
       if not transitions[l2] then
         transitions[l2] = {}
       end
-      local oldmark2 = transitions[l2][newl] or 1
-      local newmark2 = oldmark2 * mark
-    end
-    if verbose >= 1 then
-      print(("Transition  '%s'->'%s' was %g and is now %g")
-        :format(oldl2, newl, oldmark1, newmark1))
-      if oldl1 ~= '' then
+      local oldmark2 = transitions[l2][newl] or 0
+      local newmark2 = mark(oldmark2) or oldmark2
+      if verbose >= 1 then
         print(("Transition '%s'->'%s' was %g and is now %g")
           :format(l2, newl, oldmark2, newmark2))
       end
-    end
-    transitions[oldl2][newl] = newmark1
-    if oldl1 ~= '' then
       transitions[l2][newl]  = newmark2
     end
+    transitions[oldl2][newl] = newmark1
     i = i + 1
   end
 end
@@ -182,7 +185,12 @@ local function run_loop(cfg, interactive, numgen, capitalize, verbose, state, cf
   if not interactive and numgen <= 0 then return end
 
   -- Choose a name length
-  local length = choose_values(cfg.lengths)
+  local length;
+  if cfg.version == 1 then
+    length = choose_values(cfg.lengths)
+  else
+    length = choose_keys(cfg.lengths)
+  end
 
   -- Choose letters one by one
   local word = {}
@@ -339,12 +347,16 @@ OPTIONS
         Save the new configuration file in FILE. This is only effective with the
         option --mark
 
+    -c CFG
+    --config CFG
+        Use stock config CFG
+
     -l
     --lowercase
         Show names all lowercase
 
-    -c
-    --capitalize
+    -u
+    --uppercase
         Make uppercase the first letter of each generated name (the default)
 
     -v
@@ -368,25 +380,31 @@ local function load_config(config)
   return cfg
 end
 
-local function builtin_config()
-  local cfg = {}
-  cfg.alphabet = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
-    'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', "'" }
-  cfg.lengths = { 3, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 9, 10 }
-  local neutral={ a=1, b=1, c=1, e=1, f=1, g=1, h=1, i=1, j=1, k=1, l=1, m=1,
-    n=1, o=1, p=1, q=1, r=1, s=1, t=1, u=1, v=1, w=1, x=1, y=1, z=1, ["'"]=1 }
-  local vowel=neutral
-  local markv=1.5
-  local markc=0.1
-  local consonant={ a=markv, b=markc, c=markc, e=markv, f=markc, g=markc,
-    h=markc, i=markv, j=markc, k=markc, l=markc, m=markc, n=markc, o=markv,
-    p=markc, q=markc, r=markc, s=markc, t=markc, u=markv, v=markc, w=markc,
-    x=markc, y=markv, z=markc, ["'"]=1 }
-  cfg.transitions={ ['']=neutral, a=vowel, b=consonant, c=consonant, e=vowel,
-    f=consonant, g=consonant, h=consonant, i=vowel, j=consonant, k=consonant,
-    l=consonant, m=consonant, n=consonant, o=vowel, p=consonant, q=consonant,
-    r=consonant, s=consonant, t=consonant, u=vowel, v=consonant, w=consonant,
-    x=consonant, y=vowel, z=consonant, ["'"]=neutral }
+local function builtin_config(name)
+  local cfg = { version = 2 }
+  if name == "zero" then
+    cfg.lengths = {}
+    cfg.transitions = { ['']={} }
+  else
+    cfg.alphabet = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
+      'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', "'" }
+    --              1  2  3  4  5  6  7  8  9 10
+    cfg.lengths = { 0, 0, 1, 2, 3, 3, 3, 2, 1, 1 }
+    local neutral={ a=1, b=1, c=1, e=1, f=1, g=1, h=1, i=1, j=1, k=1, l=1, m=1,
+      n=1, o=1, p=1, q=1, r=1, s=1, t=1, u=1, v=1, w=1, x=1, y=1, z=1, ["'"]=1 }
+    local vowel=neutral
+    local markv=1.5
+    local markc=0.1
+    local consonant={ a=markv, b=markc, c=markc, e=markv, f=markc, g=markc,
+      h=markc, i=markv, j=markc, k=markc, l=markc, m=markc, n=markc, o=markv,
+      p=markc, q=markc, r=markc, s=markc, t=markc, u=markv, v=markc, w=markc,
+      x=markc, y=markv, z=markc, ["'"]=1 }
+    cfg.transitions={ ['']=neutral, a=vowel, b=consonant, c=consonant, e=vowel,
+      f=consonant, g=consonant, h=consonant, i=vowel, j=consonant, k=consonant,
+      l=consonant, m=consonant, n=consonant, o=vowel, p=consonant, q=consonant,
+      r=consonant, s=consonant, t=consonant, u=vowel, v=consonant, w=consonant,
+      x=consonant, y=vowel, z=consonant, ["'"]=neutral }
+  end
   return cfg
 --   print("names: Error: no builtin configuration yet.")
 --   os.exit(1)
@@ -416,13 +434,16 @@ local function handle_command_line(...)
     elseif (arg == '-n' or arg == '--num') and arg2 then
       numgen = tonumber(arg2)
       n = n + 1
+    elseif (arg == '-c' or arg == '--config') and arg2 then
+      config = arg2
+      n = n + 1
     elseif arg == '-m' or arg == '--mark' then
       mark = tonumber(arg2)
       n = n + 1
     elseif arg == '-o' or arg == '--output' then
       output = arg2
       n = n + 1
-    elseif arg == '-c' or arg == '--capitalize' then
+    elseif arg == '-u' or arg == '--uppercase' then
       capitalize = true
     elseif arg == '-l' or arg == '--lowercase' then
       capitalize = false
@@ -438,11 +459,14 @@ local function handle_command_line(...)
   end
   if configfile then
     config = load_config(configfile)
+    if not config.version then
+      config.version = 1
+    end
   else
     if verbose >= 0 then
       print("Warning: using builtin configuration file")
     end
-    config = builtin_config()
+    config = builtin_config(config)
   end
 --   local reversetransitions = {}
 --   for c1, t in pairs(config.transitions) do
@@ -455,7 +479,8 @@ local function handle_command_line(...)
   if mark then
     local word = io.read("*l")
     while word do
-      mark_word(config, mark, word, verbose)
+      mark_word(config, function(n) return n+mark end, word, verbose)
+      config.lengths[#word] = (config.lengths[#word] or 0) + 1
       word = io.read("*l")
     end
     if output then
